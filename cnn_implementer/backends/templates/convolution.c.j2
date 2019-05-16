@@ -1,0 +1,162 @@
+
+        //////////////////////////////////////////////////
+        // Start convolutional Layer {{name}}
+        {%- set vars = "n,m,i,o" %};
+        {%- set input_name = list(network.predecessors(layer_name))[0] -%}
+        {%- set input_layer = network.nodes[input_name] %}
+        {%- set halide_input_name = segment.halide_name(input_name)+('_buf' if input_name in segment.inputs else '')  %}
+        {%- set prev_name = halide_input_name %}
+        {%- set padded = (layer['padding_y']!=0 or layer['padding_x']!=0) %}
+        {%- set bias =  'bias' in params[layer_name] %}
+
+        //read weights from file
+        {%- set num_weights=layer.kernel_x*layer.kernel_y*layer.zo*int(layer.zi/layer.groups) %}
+        {%- set warr="Arr_Weight_"+halide_input_name+"_"+name %}
+        {%- set wfile="fin_"+name+"_weights" %}
+        {%- set wbuf="Weight_"+halide_input_name+"_"+name %}
+        float {{warr}}[{{num_weights}}];
+        std::ifstream {{wfile}}("{{params[layer_name]['weights']}}", std::ios::binary);
+        {{wfile}}.read(reinterpret_cast<char*>({{warr}}), {{num_weights}}*sizeof(float));
+        {{wfile}}.close();
+        Buffer<float> {{wbuf}}({{warr}}, {{layer.kernel_x}}, {{layer.kernel_y}}, {{int(layer.zi/layer.groups)}}, {{layer.zo}});
+
+        {% if bias %}
+        {%- set num_bias=layer.zo %}
+        {%- set barr="Arr_Bias_"+name %}
+        {%- set bfile="fin_"+name+"_bias" %}
+        {%- set bbuf="Bias_"+name %}
+        //read bias from file
+        float {{barr}}[{{num_bias}}];
+        std::ifstream {{bfile}}("{{params[layer_name]['bias']}}", std::ios::binary);
+        {{bfile}}.read(reinterpret_cast<char*>({{barr}}), {{num_bias}}*sizeof(float));
+        {{bfile}}.close();
+        Buffer<float> {{bbuf}}({{barr}}, {{layer.zo}});
+        {%- endif %}
+
+        {% if layer.batchnorm -%}
+        //read batchnorm mean from file
+        {%- set arr_bnmean="Arr_BatchNormMean_"+name %}
+        {%- set buf_bnmean="BatchNormMean_"+name %}
+        {%- set num_bnmean =  layer.zo %}
+        {%- set fp_bnmean = 'fin_'+name+'_batchnorm_mean'  %}
+        float {{arr_bnmean}}[{{num_bnmean}}];
+        std::ifstream {{fp_bnmean}}("{{params[layer_name]['batchnorm_mean']}}", std::ios::binary);
+        {{fp_bnmean}}.read(reinterpret_cast<char*>({{arr_bnmean}}), {{num_bnmean}}*sizeof(float));
+        {{fp_bnmean}}.close();
+        Buffer<float> {{buf_bnmean}}({{arr_bnmean}}, {{num_bnmean}});
+
+        //read batchnorm variance from file
+        {%- set arr_bnvar="Arr_BatchNormVariance_"+name %}
+        {%- set buf_bnvar="BatchNormVariance_"+name %}
+        {%- set num_bnvar =  layer.zo %}
+        {%- set fp_bnvar = 'fin_'+name+'_batchnorm_variance'  %}
+        float {{arr_bnvar}}[{{num_bnvar}}];
+        std::ifstream {{fp_bnvar}}("{{params[layer_name]['batchnorm_var']}}", std::ios::binary);
+        {{fp_bnvar}}.read(reinterpret_cast<char*>({{arr_bnvar}}), {{num_bnvar}}*sizeof(float));
+        {{fp_bnvar}}.close();
+        Buffer<float> {{buf_bnvar}}({{arr_bnvar}}, {{num_bnvar}});
+        {%- endif %}
+
+        {% if layer.scale -%}
+        //read scale values from file
+        {%- set arr_scale= "Arr_Scale_"+name %}
+        {%- set buf_scale= "Scale_"+name %}
+        {%- set num_scale=  layer.zo %}
+        {%- set fp_scale = 'fin_'+name+'_scale'  %}
+        float {{arr_scale}}[{{num_scale}}];
+        std::ifstream {{fp_scale}}("{{params[layer_name]['scale']}}", std::ios::binary);
+        {{fp_scale}}.read(reinterpret_cast<char*>({{arr_scale}}), {{num_scale}}*sizeof(float));
+        {{fp_scale}}.close();
+        Buffer<float> {{buf_scale}}({{arr_scale}}, {{num_scale}});
+
+        {% if layer.scale.bias -%}
+        //read scale bias values from file
+        {%- set arr_scale_bias="Arr_Scale_Bias"+name %}
+        {%- set buf_scale_bias="Scale_Bias"+name %}
+        {%- set num_scale_bias =  layer.zo %}
+        {%- set fp_scale_bias = 'fin_'+name+'_scale_bias'  %}
+        float {{arr_scale_bias}}[{{num_scale_bias}}];
+        std::ifstream {{fp_scale_bias}}("{{params[layer_name]['scale_bias']}}", std::ios::binary);
+        {{fp_scale_bias}}.read(reinterpret_cast<char*>({{arr_scale_bias}}), {{num_scale_bias}}*sizeof(float));
+        {{fp_scale_bias}}.close();
+        Buffer<float> {{buf_scale_bias}}({{arr_scale_bias}}, {{num_scale_bias}});
+        {%- endif %}
+        {%- endif %}
+
+        //Copy weights to internal buffer (function)
+        {% set wfunc="fWeight_"+halide_input_name+"_"+name -%}
+        Func {{wfunc}}("{{wfunc}}");
+        {{wfunc}}({{vars}})={{wbuf}}({{vars}});
+        {% if TRACING -%}
+        // enable tracing of weights
+        {{wfunc}}.trace_stores();
+        {%- endif -%}
+
+        {#- Padding -#}
+        {%- if padded %}
+        {%- set fpad="bounded_s"+str(segment.id)+"_"+halide_input_name %}
+        //Padding
+        Func {{fpad}}("{{fpad}}");
+        {{fpad}} = BoundaryConditions::constant_exterior({{prev_name}},0,0,{{input_layer.xo}},0,{{input_layer.yo}},0,{{input_layer.zo}});
+        {%- set prev_name=fpad %}
+        {%- endif %}
+        {%- if input_name in segment.inputs %}
+        {%- set fdum = "dummy_copy_"+ str(segment.id)+'_'+halide_input_name %}
+        //Copy input of this segment into dummy layer
+        Func {{fdum}}("{{fdum}}");
+        {{fdum}}({{vars3}})= {{prev_name}}({{vars3}});
+        {%- set prev_name=fdum %}
+        {% if TRACING %}
+        //enable tracing on the dummy layer
+        {{fdum}}.trace_stores();
+        {%- endif -%}
+        {%- endif %}
+
+        //Convolution
+        {%- set rc='r_'+name %};
+        RDom {{rc}}(0, {{layer.kernel_x}}, 0, {{layer.kernel_y}}, 0, {{ int(layer.zi / layer.groups) }});
+        {{name}}({{vars3}}) =  {% if bias %} {{bbuf}}(o) {% else %} cast<float>(0) {% endif %};
+        {{name}}({{vars3}}) += {{wfunc}}({{rc}}.x, {{rc}}.y, {{rc}}.z, o) * {{fdum}}(n*{{layer.stride_x}}+{{rc}}.x-{{layer.padding_x}},m*{{layer.stride_y}}+{{rc}}.y-{{layer.padding_y}}, {% if layer.groups!=1 %} cast<int>(floor(o/{{int(layer.zo/layer.groups)}}))*{{ int(layer.zi/layer.groups) }}+ {% endif %}{{rc}}.z);
+
+        {% if layer.batchnorm %}
+        {%- set eps = "%ff"%(float(layer.batchnorm_eps)) if layer.batchnorm_eps else "FLT_EPSILON" %}
+        //Batch normalisation
+        {{name}}({{vars3}})= ({{name}}({{vars3}})-{{buf_bnmean}}(o))/sqrt({{buf_bnvar}}(o)+ {{eps}} );
+        {%- endif %}
+
+        {% if layer.scale %}
+        //Scaling
+        {{name}}({{vars3}})={{name}}({{vars3}})*{{buf_scale}}(o) {% if layer.scale.bias %} + {{buf_scale_bias}}(o) {% endif %};
+        {%- endif %}
+
+        {% if layer.relu %}
+        //ReLu
+        {{name}}({{vars3}}) = (max(0.0f, {{name}}({{vars3}}) ));
+        {%- endif -%}
+
+        {% if layer.sigmoid %}
+        //Sigmoid function
+        {{name}}({{vars3}}) = 1.f/(1.f+exp(-1.f*{{name}}({{vars3}})));
+        {%- endif -%}
+
+        {#- Layers with no external outputs need tiling + order etc. #}
+        {% if layer_name == segment.last.layer_name %}
+        //Variables for tiled loops (o=outer, i=internal)
+        Var m_o_{{name}}("m_o_{{name}}"),m_i_{{name}}("m_i_{{name}}"),n_o_{{name}}("n_o_{{name}}"),o_o_{{name}}("o_o_{{name}}"),o_i_{{name}}("o_i_{{name}}"),n_i_{{name}}("n_i_{{name}}");
+
+        //Domains of i
+        RVar i_i_{{name}};
+        RVar i_o_{{name}};
+
+        //Apply tiling
+        {{name}}.update().split(n,            n_o_{{name}}, n_i_{{name}}, {{cfg.Tx}},  TailStrategy::GuardWithIf);
+        {{name}}.update().split(m,            m_o_{{name}}, m_i_{{name}}, {{cfg.Ty}},  TailStrategy::GuardWithIf);
+        {{name}}.update().split(o,            o_o_{{name}}, o_i_{{name}}, {{cfg.Tzo}}, TailStrategy::GuardWithIf);
+        {{name}}.update().split({{rc}}.z  ,   i_o_{{name}}, i_i_{{name}}, {{cfg.Tzi}}, TailStrategy::GuardWithIf);
+
+        //Set order of computation
+        {{name}}.update().reorder({{', '.join(rename_order(cfg.order, postfix='_'+name)) }});
+        {%- endif %}
+
+        // End convolutional Layer {{name}}
+        //////////////////////////////////////////////////

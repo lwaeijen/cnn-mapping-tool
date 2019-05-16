@@ -1,0 +1,80 @@
+#include "Halide.h"
+#include "halide_image_io.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <float.h>
+
+#include <iostream>
+#include <fstream>
+using namespace std;
+
+using namespace Halide;
+using namespace Halide::Tools;
+
+Buffer<float> {{network.name.replace('-','').replace('.','').replace(' ','')}}(
+    {%- set first=True -%}
+    {%- for segment, cfg in segments %}
+        {%- for layer_name in nx.topological_sort(segment) -%}
+            {%- if segment.nodes[layer_name].type == 'input' -%}
+                {%- if not first %}, {%endif-%} Buffer<float> {{segment.halide_name(layer_name)}}_buf
+                {%- set first=False -%}
+            {%-endif-%}
+        {%-endfor-%}
+    {%-endfor-%}
+){
+    //////////////////////////////
+    //
+    // Halide Setup
+    //
+
+    //Get target architecture of host
+    Target host_target=get_host_target();
+    {% if PROFILING %}
+    //enable profiling
+    host_target.set_feature(Target::Profile);
+    {%endif%}
+
+    //Loop Vars
+    Var m("m");
+    Var n("n");
+    Var i("i");
+    Var o("o");
+    {# helper define for layers#}
+    {%- set vars3 = "n,m,o" %}
+
+    {%- for segment, cfg in segments %}
+    //////////////////////////////
+    // Segment {{ segment.name }}
+
+        {%- for layer_name in nx.topological_sort(segment)   %}
+            {%- set layer = segment.nodes[layer_name] %}
+            {%- set name = segment.halide_name(layer_name) %}
+            {% if layer.type in ['convolution', 'eltwise', 'virtual_slice', 'concat', 'softmax', 'pooling', 'lrn'] %}
+                {%- include layer.type+'_pre.c.j2' %}
+            {% endif %}
+        {%- endfor -%}
+
+        {%- for layer_name in nx.topological_sort(segment)   %}
+            {%- set layer = segment.nodes[layer_name] %}
+            {%- set name = segment.halide_name(layer_name) %}
+            {% if layer.type in ['convolution', 'eltwise', 'virtual_slice', 'concat', 'softmax', 'pooling', 'lrn'] %}
+                {%- include layer.type+'.c.j2' %}
+            {% elif layer.type not in ['input'] %}
+                //ERROR: unknown layer type "{{layer.type}}" for layer "{{layer_name}}". SKIPPING!
+            {% endif %}
+        {%- endfor -%}
+
+        {%- for layer_name in nx.topological_sort(segment)   -%}
+            {%- set layer = segment.nodes[layer_name] -%}
+            {%- set name = segment.halide_name(layer_name) %}
+            {% if layer.type in ['convolution', 'eltwise', 'virtual_slice', 'softmax', 'pooling', 'lrn'] %}
+                {%- include layer.type+'_post.c.j2' %}
+            {% endif %}
+        {%- endfor %}
+
+    //
+    // End of Segment {{ segment.name }}
+    //////////////////////////////
+   {% endfor -%}
+}
+

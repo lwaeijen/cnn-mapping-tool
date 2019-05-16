@@ -1,0 +1,8 @@
+1068, 304, 30km/h confidence: 0.394556
+1072, 304, 30km/h confidence: 0.660852
+1068, 308, 30km/h confidence: 0.973982
+1072, 308, 30km/h confidence: 0.983345
+312, 420, 50km/h confidence: 0.973999
+316, 420, 50km/h confidence: 0.639222
+312, 424, 50km/h confidence: 0.989675
+316, 424, 50km/h confidence: 0.872194

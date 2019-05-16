@@ -1,0 +1,28 @@
+
+        //////////////////////////////////////////////////
+        // Start concat layer: {{name}}
+
+        {{name}}({{vars3}})=
+        Halide::select(
+        {% for input in layer.inputs -%}
+        {%- set halide_input_name = segment.halide_name(input) + ('_buf' if input in segment.inputs else '') %}
+            {%- if not loop.last %}    o< {{layer.input_concat_range[input][1]}},{%-else%}    {% endif %}{{halide_input_name}}(n, m, clamp(o-{{layer.input_concat_range[input][0]}}, 0, {{layer.input_sizes[input]['zi']-1}})){%- if not loop.last %},{%- endif %}
+        {% endfor -%}
+        );
+
+        {#- Last layer of segment #}
+        {% if layer_name == segment.last.layer_name -%}
+
+        {% if debug -%}
+        printf("dbg: Start realizing segment {{segment.name}}\n");
+        {%- endif %}
+
+        //Realize into buffer
+        {{name}}.compile_jit(host_target);
+        Buffer<float> {{name}}_buf = {{name}}.realize({{layer.xo}},{{layer.yo}},{{layer.zo}});
+
+        {% if debug -%}
+        printf("dbg: Realized segment {{segment.name}}\n");
+        {%- endif %}
+
+        {%- endif %}

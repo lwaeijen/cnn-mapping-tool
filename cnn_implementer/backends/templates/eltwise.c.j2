@@ -1,0 +1,24 @@
+
+        //////////////////////////////////////////////////
+        // Start Elementwise summation layer: {{name}}
+
+        {%- set ew = name+'_elementwise' %}
+        //Elementwise layer
+        Func {{ew}}("{{ew}}");
+        {{ew}}({{vars3}}) = cast<float>(0);
+        {%- for input_name in network.predecessors(layer_name) -%}
+        {%- set halide_input_name = segment.halide_name(input_name)+('_buf' if input_name in segment.inputs else '')  %}
+        {{ew}}({{vars3}}) += {{halide_input_name}}({{vars3}});
+        {%- endfor %}
+        {%- set prev_name=ew %}
+
+        {% if layer.relu %}
+        {%- set rl=name+'_relu' %}
+        //ReLu
+        Func {{rl}}("{{rl}}");
+        {{rl}}({{vars3}}) = (max(0.0f, {{prev_name}}({{vars3}}) ));
+        {%- set prev_name=rl %}
+        {%- endif -%}
+
+        //rename layer
+        {{name}}({{vars3}})={{prev_name}}({{vars3}});

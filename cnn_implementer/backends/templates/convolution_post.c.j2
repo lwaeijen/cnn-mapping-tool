@@ -1,0 +1,62 @@
+
+        {#- get name of input layer -#}
+        {%- set input_name = list(network.predecessors(layer_name))[0] -%}
+        {%- set input_layer = network.nodes[input_name] %}
+        {%- set halide_input_name = segment.halide_name(input_name)+('_buf' if input_name in segment.inputs else '')  %}
+
+        //Set compute and store levels of the weights
+        {%- set wfunc="fWeight_"+halide_input_name+"_"+name %}
+        {{wfunc}}.store_at({{name}},{{rename(cfg[layer_name].store_at_weights)}}_{{name}});
+        {{wfunc}}.compute_at({{name}},{{rename(cfg[layer_name].compute_at_weights)}}_{{name}});
+
+        //Set compute and store levels of the input data
+        {%- set fdum = "dummy_copy_"+ str(segment.id)+'_'+halide_input_name %}
+        {{fdum}}.store_at({{name}},{{rename(cfg[layer_name].store_at)}}_{{name}});
+        {{fdum}}.compute_at({{name}},{{rename(cfg[layer_name].compute_at)}}_{{name}});
+
+        {% for dim, size in cfg[layer_name].folds.items() -%}
+        {%-  if size>1 %}
+        //Folding of data dim {{rename(dim)[0]}}
+        {{fdum}}.fold_storage({{rename(dim)[0]}}, {{size}});
+        {%- endif %}
+        {%- endfor %}
+
+        {% if layer_name == segment.last.layer_name -%}
+        {#- Last layer in a segment -#}
+
+        {% if debug -%}
+        printf("dbg: Start realizing segment {{segment.name}}\n");
+        {%- endif %}
+
+        {%- if TRACING %}
+        //trace stores into {{name}}_buf (which are the external stores)
+        //NOTE: this does not hold if there are also uses of {{name}} that do not go to a _buf !!!
+        {{fdum}}.trace_stores();
+        {%- endif %}
+
+        //Realize into buffer
+        {{name}}.compile_jit(host_target);
+        {%- set buf = name+'_buf' %}
+        Buffer<float> {{buf}} = {{name}}.realize({{layer.xo}},{{layer.yo}},{{layer.zo}});
+
+        {% if debug -%}
+        printf("dbg: Realized segment {{segment.name}}\n");
+
+        //store output for debug
+        {%- set fp = name+'_fp' %}
+        ofstream {{fp}};
+        {{fp}}.open("{{name}}_buf.txt");
+        for(int o=0;o<{{buf}}.channels();o++){
+            for(int m=0;m<{{buf}}.height();m++)
+                for(int n=0;n<{{buf}}.width();n++)
+                    {{fp}} << {{buf}}(n,m,o)<<endl;
+                }
+		{{fp}}.close();
+        {%- endif %}
+
+        {%- if len(segment.outputs) == 0 -%}
+        //this is the last layer of the network, return the realized buffer
+        return {{buf}};
+        {%- endif %}
+        {#- End: Last layer in a segment -#}
+        {%- endif %}

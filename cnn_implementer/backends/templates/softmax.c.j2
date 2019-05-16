@@ -1,0 +1,17 @@
+
+        //////////////////////////////////////////////////
+        // Start Softmax layer: {{name}}
+
+        {%- set input_name = list(network.predecessors(layer_name))[0] -%}
+        {%- set halide_input_name = segment.halide_name(input_name)+('_buf' if input_name in segment.inputs else '')  %}
+        //initially calculate the exp function for all elements in the input vector
+        {%- set exp = name+'_exp' %}
+        Func {{exp}}("{{exp}}");
+        {{exp}}({{vars3}})=Halide::exp( {{halide_input_name}}({{vars3}}) );
+
+        //Sum over all exp elements
+        RDom r_{{name}}(0,{{layer.xi}}, 0, {{layer.yi}}, 0, {{layer.zi}});
+        Expr {{name}}_sum = Halide::sum( {{exp}}(r_{{name}}.x, r_{{name}}.y, r_{{name}}.z) );
+
+        //Finally divide each element by the sum
+        {{name}}({{vars3}})={{exp}}({{vars3}})/{{name}}_sum;

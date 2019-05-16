@@ -1,0 +1,26 @@
+
+        //Variables for tiled loops (o=outer, i=internal)
+        //Var m_o_{{name}}("m_o_{{name}}"),m_i_{{name}}("m_i_{{name}}"),n_o_{{name}}("n_o_{{name}}"),o_o_{{name}}("o_o_{{name}}"),o_i_{{name}}("o_i_{{name}}"),n_i_{{name}}("n_i_{{name}}");
+
+        //Apply tiling
+        //{{name}}.update().split(n,   n_o_{{name}}, n_i_{{name}}, {{cfg.Tx}}, TailStrategy::GuardWithIf);
+        //{{name}}.update().split(m,   m_o_{{name}}, m_i_{{name}}, {{cfg.Ty}}, TailStrategy::GuardWithIf);
+
+        {% if layer_name == segment.last.layer_name -%}
+        //compile
+        {{name}}.compile_jit(host_target);
+
+        {% if debug -%}
+        printf("dbg: Start realizing segment {{segment.name}}\n");
+        {%- endif %}
+
+        //realize
+        {%- set buf = name+'_buf' %}
+        Buffer<float> {{buf}} = {{name}}.realize({{layer.xo}},{{layer.yo}},{{layer.zo}});
+
+        {%- if len(segment.outputs) == 0 -%}
+        //this is the last layer of the network, return the realized buffer
+        return {{buf}};
+        {%- endif -%}
+
+        {%- endif %}

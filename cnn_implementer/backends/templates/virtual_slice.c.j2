@@ -1,0 +1,11 @@
+
+        {%- set slice = segment.halide_name(layer_name) %}
+        {%- set slice_obj = segment.nodes()[layer_name] %}
+        {%- set start = slice_obj['start'] %}
+        //////////////////////////////////////////////////
+        // Start slice layer: {{slice}}
+        {#- Note, should always be only one input layer! #}
+        {%- for input_name in network.predecessors(layer_name) -%}
+        {%- set halide_input_name = segment.halide_name(input_name)+('_buf' if input_name in segment.inputs else '') %}
+        {{slice}}({{vars3}}) = {{halide_input_name}}(n,m, {{start}}+o);
+        {%- endfor %}

@@ -1,0 +1,6 @@
+recursive-include cnn_implementer/backends/templates *.j2
+exclude .gitignore
+include README.md
+prune .git
+prune .cache
+recursive-exclude *.egg-info *

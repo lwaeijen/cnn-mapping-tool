@@ -1,0 +1,36 @@
+
+        {% if layer_name == segment.last.layer_name -%}
+        {#- Last layer in a segment -#}
+
+        {% if debug -%}
+        printf("dbg: Start realizing segment {{segment.name}}\n");
+        {%- endif %}
+
+        //Realize into buffer
+        {{name}}.compile_jit(host_target);
+        {%- set xo = layer.xo %}
+        {%- set yo = layer.yo %}
+        {%- set buf = name+'_buf' %}
+        Buffer<float> {{buf}} = {{name}}.realize({{xo}},{{yo}},{{layer.zo}});
+
+        {% if debug -%}
+        printf("dbg: Realized segment {{segment.name}}\n");
+
+        //store output for debug
+        {%- set fp = name+'_fp' %}
+        ofstream {{fp}};
+        {{fp}}.open("{{name}}_buf.txt");
+        for(int o=0;o<{{buf}}.channels();o++){
+            for(int m=0;m<{{buf}}.height();m++)
+                for(int n=0;n<{{buf}}.width();n++)
+                    {{fp}} << {{buf}}(n,m,o)<<endl;
+                }
+		{{fp}}.close();
+        {%- endif %}
+
+        {%- if len(segment.outputs) == 0 -%}
+        //this is the last layer of the network, return the realized buffer
+        return {{buf}};
+        {%- endif %}
+        {#- End: Last layer in a segment -#}
+        {%- endif %}

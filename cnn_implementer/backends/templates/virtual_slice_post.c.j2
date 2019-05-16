@@ -1,0 +1,6 @@
+
+        {%- if layer_name in segment.produces %}
+        //Realize into buffer
+        {{name}}.compile_jit(host_target);
+        Buffer<float> {{name}}_buf = {{name}}.realize({{layer.xo}},{{layer.yo}},{{layer.zo}});
+        {%- endif %}
