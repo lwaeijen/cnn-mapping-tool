@@ -5,7 +5,7 @@ This python package provides a framework including commandline tool to transform
 The philosophy behind this closely resembles that of LLVM, in that there are frontends which read in various network descriptions from existing frameworks (e.g. Caffe), a common intermediate network representation which can be analysed using various generic analysis passes, and different backends fo various targets.
 
 More information about this tool and the theory behind it can be found in:</br>
-[Automatic memory-efficient scheduling of CNNs - Lwaeijen et al.](https://research.tue.nl/en/publications/automatic-memory-efficient-scheduling-of-cnns)
+[Automatic memory-efficient scheduling of CNNs - Waeijen et al.](https://research.tue.nl/en/publications/automatic-memory-efficient-scheduling-of-cnns)
 
 
 ## Usage
